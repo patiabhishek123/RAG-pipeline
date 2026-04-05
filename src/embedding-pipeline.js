@@ -5,6 +5,7 @@ import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/
 import { randomUUID } from "node:crypto";
 import "dotenv/config";
 
+// Pinecone metadata cannot contain nested objects, so we keep only supported value types.
 function sanitizeMetadata(metadata) {
     return Object.fromEntries(
         Object.entries(metadata).filter(([, value]) => {
@@ -29,6 +30,7 @@ export async function docEmbedding(url) {
     const parsedDocs = await loader.load();
     const docsWithMeta = parsedDocs
         .map((doc) => {
+            // Preserve the original URL as the source for each loaded document.
             doc.metadata.source = url;
             return doc;
         })
@@ -48,6 +50,7 @@ export async function docEmbedding(url) {
         chunkOverlap: 200,
     });
 
+    // Split long page content into overlapping chunks so retrieval keeps enough context.
     const allSplits = (await textSplitter.splitDocuments(docsWithMeta)).filter(
         (doc) => doc.pageContent?.trim().length > 0
     );
@@ -70,10 +73,12 @@ export async function docEmbedding(url) {
     });
     const pineconeIndex = pinecone.Index(process.env.PINECONE_INDEX);
 
+    // Generate one embedding vector per chunk before building Pinecone records.
     const vectors = await embeddings.embedDocuments(
         allSplits.map((doc) => doc.pageContent)
     );
 
+    // Each Pinecone record needs a unique id, the vector values, and primitive-safe metadata.
     const records = vectors.map((values, index) => ({
         id: randomUUID(),
         values,
